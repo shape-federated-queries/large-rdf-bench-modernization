@@ -1,0 +1,17 @@
+[project]
+name = "shape-generator"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Bryan-Elliott Tam",email = "bryanelliott.tam@ugent.be"}
+]
+requires-python = ">=3.14"
+dependencies = [
+    "shexer (>=2.7.2.1,<3.0.0.0)",
+    "six (>=1.17.0,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
