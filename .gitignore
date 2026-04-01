@@ -1,4 +1,5 @@
 temp.zip
-sources
+engine/*
+!engine/Qleverfile
 queries
 large-rdf-bench
