@@ -3,3 +3,4 @@ engine/*
 !engine/Qleverfile
 queries
 large-rdf-bench
+.download-dataset-stamp

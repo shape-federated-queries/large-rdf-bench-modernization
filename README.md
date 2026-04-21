@@ -1,10 +1,14 @@
 # Benchmark
 
 ## Dependencies
-- [gdown](https://github.com/wkentaro/gdown)
-  - [A CLI can be downloaded for arch based distro](https://aur.archlinux.org/packages/gdown)
+
 - [unzip](https://man.archlinux.org/man/unzip.1)
+- [Qlever](https://docs.qlever.dev/quickstart/#installing-qlever)
 
-
-
-podman pull docker.io/adfreiburg/qlever
+```sqarl
+CONSTRUCT { ?s  ?p ?o }  WHERE  { 
+      ?s  ?p ?o. 
+     FILTER (?p != <http://vocab.sindice.net/analytics#cardinality>)
+	 } LIMIT 100
+```
+ls engine/**/*.{nt,n3,owl,rdf}

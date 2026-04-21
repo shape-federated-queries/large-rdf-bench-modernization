@@ -11,7 +11,7 @@
 # dataset should have a short DESCRIPTION, ideally with a date.
 [data]
 NAME         = large_rdf_bench
-DESCRIPTION  = Yago dataset for query optimization
+DESCRIPTION  = Large RDF Bench dataset
 
 # The format for INPUT_FILES should be such that `ls ${INPUT_FILES}` lists all
 # input files. CAT_INPUT_FILES should write a concatenation of all input files

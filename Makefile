@@ -1,7 +1,7 @@
 .PHONY: clean download-datasets initialize-benchmark extract-datasets initialize-qlever
 
-ENGINE_DIR = engine
-QUERIES_DIR = queries
+ENGINE_DIR = ./engine
+QUERIES_DIR = ./queries
 ARCHIVE_DIR = $(ENGINE_DIR)/_archive
 
 initialize-benchmark: download-dataset extract-datasets initialize-qlever
@@ -17,7 +17,7 @@ initialize-qlever: $(ENGINE_DIR)/.index-stamp
 	unzip temp.zip -d ./
 	rm temp.zip
 	@echo "Setting the repository architecture."
-	mv ./large-rdf-bench/queries $(QUERIES_DIR)
+	mv ./large-rdf-bench/queries ./
 	mv ./large-rdf-bench/sources $(ARCHIVE_DIR)
 	rm -r ./large-rdf-bench
 	touch $@
