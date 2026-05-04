@@ -1,0 +1,6 @@
+<http://bio2rdf.org/affymetrix:probe%20123> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://bio2rdf.org/affymetrix_vocabulary:Probe> .
+<http://example.org/subject%20one> <http://example.org/pred> <http://example.org/object> .
+<http://example.org/no-special> <http://example.org/pred> "literal with spaces stays" .
+<http://example.org/foo%7Cbar> <http://example.org/pred> "literal value" .
+<http://example.org/a%22b%5Ec%7Bd%7De%5Cf%60g> <http://example.org/pred> <http://example.org/o> .
+<http://plain.org/s> <http://plain.org/p> <http://plain.org/o> .

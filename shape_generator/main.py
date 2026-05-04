@@ -1,16 +1,23 @@
+import glob
 from shexer.shaper import Shaper
-from shexer.consts import NT, SHEXC, SHACL_TURTLE
-
-target_classes = [
-    "http://example.org/Person",
-    "http://example.org/Gender"
-]
+from shexer.consts import NT
 
 namespaces_dict = {"http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf",
                    "http://example.org/": "ex",
                    "http://weso.es/shapes/": "",
                    "http://www.w3.org/2001/XMLSchema#": "xsd"
                    }
+file_path_glob = "/home/bryanelliott/Documents/PhD/coding/shape-index-federated-query-planning/dataset-cleaning/out/*.nt"
+
+kg = ""
+max = 5
+i = 0
+for file_path in glob.glob(file_path_glob):
+    with open(file_path, 'r') as file:
+        kg += file.read()
+    i+=1
+    if i == max:
+        break
 
 raw_graph = """
 <http://example.org/sarah> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Person> .
@@ -38,11 +45,22 @@ raw_graph = """
 
 input_nt_file = "target_graph.nt"
 
+"""
+shaper = Shaper(shape_map_raw=shape_map_raw,
+                url_endpoint="https://query.wikidata.org/sparql",
+                instantiation_property="http://www.wikidata.org/prop/direct/P31")
+"""
+
 shaper = Shaper(all_classes_mode=True,
-                raw_graph=raw_graph,
+                namespaces_dict=namespaces_dict,
+                url_endpoint="http://localhost:8888")
+"""
+shaper = Shaper(all_classes_mode=True,
+                raw_graph=kg,
                 input_format=NT,
                 namespaces_dict=namespaces_dict,  # Default: no prefixes
                 instantiation_property="http://www.w3.org/1999/02/22-rdf-syntax-ns#type")  # Default rdf:type
+"""
 
 output_file = "shaper_example.shex"
 

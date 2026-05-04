@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE rdf:RDF [
+    <!ENTITY dc 'http://purl.org/dc/elements/1.1/'>
+    <!ENTITY foaf 'http://xmlns.com/foaf/0.1/'>
+]>
+<rdf:RDF
+    xmlns:dc="&dc;"
+    xmlns:foaf="&foaf;"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+>
+<!-- a comment with 'single quotes' that must not be touched -->
+<foaf:Document rdf:about='http://example.org/foo bar'/>
+<foaf:Document rdf:about="http://example.org/clean"/>
+<rdf:Description rdf:about='http://example.org/a^b{c|d}e'>
+    <dc:title>A test resource</dc:title>
+</rdf:Description>
+</rdf:RDF>
