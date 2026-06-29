@@ -46,16 +46,22 @@ type rdfProcessor struct {
 	br            *bufio.Reader
 	bw            *bufio.Writer
 	total         int64
-	attrBuf       []byte // buffer for current attribute value (for IRI fixing)
+	attrBuf       []byte // raw bytes of the current attribute value (for IRI fixing)
+	encBuf        []byte // scratch for percent-encoding attrBuf (reused per attr)
+	attrName      []byte // name of the attribute currently being read in a tag
+	pendingLang   bool   // the attribute before the next '=' value is xml:lang
+	langAttr      bool   // the open attribute value is xml:lang (fix, don't IRI-clean)
+	stats         *Stats // optional fix counters; nil disables counting
 }
 
-func newRDFProcessor(r io.Reader, bw *bufio.Writer, role mergeRole) *rdfProcessor {
+func newRDFProcessor(r io.Reader, bw *bufio.Writer, role mergeRole, st *Stats) *rdfProcessor {
 	return &rdfProcessor{
 		state:         stateNormal,
 		outputEnabled: role != roleSubsequent,
 		role:          role,
 		br:            bufio.NewReaderSize(r, 1<<20),
 		bw:            bw,
+		stats:         st,
 	}
 }
 
@@ -165,14 +171,32 @@ func (p *rdfProcessor) handleInTag(b byte) {
 	case '"':
 		p.emit(b)
 		p.attrBuf = p.attrBuf[:0]
+		p.langAttr = p.pendingLang
+		p.pendingLang = false
 		p.state = stateInDoubleQuoteAttr
 	case '\'':
 		p.emit('"') // convert single → double quote
+		if p.stats != nil {
+			p.stats.QuotesConverted++
+		}
 		p.attrBuf = p.attrBuf[:0]
+		p.langAttr = p.pendingLang
+		p.pendingLang = false
 		p.state = stateInSingleQuoteAttr
 	default:
 		p.emit(b)
 		p.prevInTag = b
+		// Track the attribute name so the value handler knows when it is reading
+		// xml:lang (which is a language tag, not an IRI).
+		switch {
+		case b == '=':
+			p.pendingLang = string(p.attrName) == "xml:lang"
+			p.attrName = p.attrName[:0]
+		case isNameChar(b):
+			p.attrName = append(p.attrName, b)
+		default: // whitespace, '/', etc. end the current name token
+			p.attrName = p.attrName[:0]
+		}
 	}
 }
 
@@ -202,32 +226,40 @@ func (p *rdfProcessor) handleInCDATA(b byte) {
 	}
 }
 
+// emitAttrValue writes the cleaned attribute value: a language tag is reduced
+// to a valid form, any other value is treated as an IRI and percent-encoded.
+func (p *rdfProcessor) emitAttrValue() {
+	if p.langAttr {
+		fixed, changed := fixLangTag(p.attrBuf)
+		if changed && p.stats != nil {
+			p.stats.LangTagsFixed++
+		}
+		p.emitStr(string(fixed))
+		p.langAttr = false
+		return
+	}
+	p.encBuf = encodeIRIBody(p.encBuf[:0], p.attrBuf, p.stats)
+	p.emitStr(FixIRI(string(p.encBuf), p.stats))
+}
+
 func (p *rdfProcessor) handleDoubleQuoteAttr(b byte) {
 	if b == '"' {
-		p.emitStr(FixIRI(string(p.attrBuf)))
+		p.emitAttrValue()
 		p.emit(b)
 		p.state = stateInTag
 		return
 	}
-	if enc := EncodeChar(b); enc != "" {
-		p.attrBuf = append(p.attrBuf, enc...)
-	} else {
-		p.attrBuf = append(p.attrBuf, b)
-	}
+	p.attrBuf = append(p.attrBuf, b)
 }
 
 func (p *rdfProcessor) handleSingleQuoteAttr(b byte) {
 	if b == '\'' {
-		p.emitStr(FixIRI(string(p.attrBuf)))
+		p.emitAttrValue()
 		p.emit('"') // convert closing single → double quote
 		p.state = stateInTag
 		return
 	}
-	if enc := EncodeChar(b); enc != "" {
-		p.attrBuf = append(p.attrBuf, enc...)
-	} else {
-		p.attrBuf = append(p.attrBuf, b)
-	}
+	p.attrBuf = append(p.attrBuf, b)
 }
 
 func (p *rdfProcessor) handleSkippingClose(b byte) {
@@ -273,8 +305,8 @@ func (p *rdfProcessor) run() (int64, error) {
 // CleanRDF cleans a single RDF/XML stream: converts single-quoted XML attribute
 // delimiters to double quotes and percent-encodes invalid IRI characters.
 // Returns the number of bytes written.
-func CleanRDF(r io.Reader, bw *bufio.Writer) (int64, error) {
-	return newRDFProcessor(r, bw, roleSingle).run()
+func CleanRDF(r io.Reader, bw *bufio.Writer, st *Stats) (int64, error) {
+	return newRDFProcessor(r, bw, roleSingle, st).run()
 }
 
 // MergeAndCleanRDF merges and cleans RDF/XML files matched by the provided paths.
@@ -283,7 +315,7 @@ func CleanRDF(r io.Reader, bw *bufio.Writer) (int64, error) {
 // </rdf:RDF> written at the end).
 // When files is empty, reads from stdin in single-file mode.
 // Returns the total bytes written.
-func MergeAndCleanRDF(files []string, bw *bufio.Writer) (int64, error) {
+func MergeAndCleanRDF(files []string, bw *bufio.Writer, st *Stats) (int64, error) {
 	if len(files) <= 1 {
 		var r io.Reader = os.Stdin
 		if len(files) == 1 {
@@ -294,7 +326,7 @@ func MergeAndCleanRDF(files []string, bw *bufio.Writer) (int64, error) {
 			defer f.Close()
 			r = f
 		}
-		return CleanRDF(r, bw)
+		return CleanRDF(r, bw, st)
 	}
 
 	var total int64
@@ -307,7 +339,7 @@ func MergeAndCleanRDF(files []string, bw *bufio.Writer) (int64, error) {
 		if err != nil {
 			return total, err
 		}
-		n, err := newRDFProcessor(f, bw, role).run()
+		n, err := newRDFProcessor(f, bw, role, st).run()
 		f.Close()
 		total += n
 		if err != nil {

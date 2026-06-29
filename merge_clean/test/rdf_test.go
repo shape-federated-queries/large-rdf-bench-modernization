@@ -15,7 +15,7 @@ func cleanRDF(t *testing.T, input string) string {
 	t.Helper()
 	var buf bytes.Buffer
 	bw := bufio.NewWriter(&buf)
-	_, err := processor.CleanRDF(strings.NewReader(input), bw)
+	_, err := processor.CleanRDF(strings.NewReader(input), bw, nil)
 	if err != nil {
 		t.Fatalf("CleanRDF error: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestMergeAndCleanRDF_TwoFiles(t *testing.T) {
 
 	var buf bytes.Buffer
 	bw := bufio.NewWriter(&buf)
-	_, err := processor.MergeAndCleanRDF([]string{file1, file2}, bw)
+	_, err := processor.MergeAndCleanRDF([]string{file1, file2}, bw, nil)
 	if err != nil {
 		t.Fatalf("MergeAndCleanRDF error: %v", err)
 	}

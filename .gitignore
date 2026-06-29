@@ -1,6 +1,9 @@
 temp.zip
-engine/*
-!engine/Qleverfile
+raw_datasets/*
+!raw_datasets/Qleverfile
 queries
 large-rdf-bench
 .download-dataset-stamp
+datasets
+results
+reports

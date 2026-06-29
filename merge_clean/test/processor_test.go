@@ -65,7 +65,7 @@ func TestCleanLine(t *testing.T) {
 	var out []byte
 	for _, c := range cases {
 		t.Run(c.desc, func(t *testing.T) {
-			processor.CleanLine([]byte(c.in), &out, "http://")
+			processor.CleanLine([]byte(c.in), &out, "http://", nil, false)
 			if got := string(out); got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}
@@ -75,8 +75,8 @@ func TestCleanLine(t *testing.T) {
 
 func TestCleanLine_BufferReuse(t *testing.T) {
 	var out []byte
-	processor.CleanLine([]byte("<http://ex.org/a b>"), &out, "http://")
-	processor.CleanLine([]byte("<http://ex.org/c d>"), &out, "http://")
+	processor.CleanLine([]byte("<http://ex.org/a b>"), &out, "http://", nil, false)
+	processor.CleanLine([]byte("<http://ex.org/c d>"), &out, "http://", nil, false)
 	want := "<http://ex.org/c%20d>"
 	if got := string(out); got != want {
 		t.Errorf("buffer reuse: got %q, want %q", got, want)
@@ -122,7 +122,7 @@ func TestProcessStream(t *testing.T) {
 			bw := bufio.NewWriter(&buf)
 			var outBuf []byte
 
-			n, err := processor.ProcessStream(strings.NewReader(c.input), bw, &outBuf, "http://")
+			n, err := processor.ProcessStream(strings.NewReader(c.input), bw, &outBuf, "http://", nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -144,7 +144,7 @@ func TestCleanLine_CURIEExpansion(t *testing.T) {
 	in := `<bio2rdf_dataset:bio2rdf-affymetrix-20121004> <http://bio2rdf.org/affymetrix_vocabulary:create_date> "2011-06-09" .`
 	want := `<http://bio2rdf_dataset%3Abio2rdf-affymetrix-20121004> <http://bio2rdf.org/affymetrix_vocabulary:create_date> "2011-06-09" .`
 	var out []byte
-	processor.CleanLine([]byte(in), &out, "http://")
+	processor.CleanLine([]byte(in), &out, "http://", nil, false)
 	if got := string(out); got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
