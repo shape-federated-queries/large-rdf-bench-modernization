@@ -1,6 +1,6 @@
 temp.zip
-raw_datasets/*
-!raw_datasets/Qleverfile
+raw_datasets
+raw_results
 queries
 large-rdf-bench
 .download-dataset-stamp

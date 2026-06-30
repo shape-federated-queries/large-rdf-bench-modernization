@@ -46,6 +46,11 @@ func TestCleanLine(t *testing.T) {
 			"<http://a%20b%22%5E%7B%7C%7D%5C%60z>",
 		},
 		{
+			"NUL inside a literal becomes a space",
+			"<http://s.org/s> <http://p.org/p> \"a\x00b\" .",
+			`<http://s.org/s> <http://p.org/p> "a b" .`,
+		},
+		{
 			"empty line",
 			"",
 			"",
@@ -70,6 +75,18 @@ func TestCleanLine(t *testing.T) {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}
 		})
+	}
+}
+
+func TestCleanLine_NullsStripped(t *testing.T) {
+	var out []byte
+	var st processor.Stats
+	processor.CleanLine([]byte("<http://s> <http://p> \"x\x00y\x00z\" ."), &out, "http://", &st, false)
+	if want := `<http://s> <http://p> "x y z" .`; string(out) != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+	if st.NullsStripped != 2 {
+		t.Errorf("NullsStripped = %d, want 2", st.NullsStripped)
 	}
 }
 

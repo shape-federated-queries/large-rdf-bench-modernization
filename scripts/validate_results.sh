@@ -11,16 +11,7 @@ for out in "$RESULTS_DIR"/*.srj; do
 	[ -f "$out" ] || continue
 	name=$(basename "$out")
 	raw="$RAW_RESULTS_DIR/$name"
-	if python3 - "$raw" "$out" <<'PY'
-import json, sys
-raw, out = sys.argv[1], sys.argv[2]
-d = json.load(open(out))                       # valid JSON
-assert "head" in d, "missing head"
-assert "results" in d or "boolean" in d, "missing results/boolean"
-def n(p):
-    return len(json.load(open(p)).get("results", {}).get("bindings", []))
-assert n(raw) == n(out), f"binding count {n(out)} != raw {n(raw)}"
-PY
+	if python3 "$(dirname "$0")/validate_result.py" "$raw" "$out"
 	then echo "PASS  $name"; pass=$((pass + 1))
 	else echo "FAIL  $name"; fail=$((fail + 1))
 	fi

@@ -1,4 +1,4 @@
-.PHONY: clean pipeline \
+.PHONY: clean clean-generation clean-download clean-stamps pipeline \
 	download-datasets initialize-benchmark extract-datasets \
 	build-merge-clean \
 	generate-clean-dataset \
@@ -9,6 +9,11 @@
 	validate-affymetrix validate-jamendo validate-nyt validate-swdfood \
 	validate-chebi validate-kegg validate-geonames validate-drugbank validate-lmdb \
 	validate-tcga-a validate-tcga-e validate-tcga-m validate-dbpedia \
+	generate-hdt validate-comunica \
+	validate-comunica-affymetrix validate-comunica-drugbank validate-comunica-lmdb \
+	validate-comunica-jamendo validate-comunica-nyt validate-comunica-swdfood validate-comunica-dbpedia \
+	validate-comunica-chebi validate-comunica-kegg validate-comunica-geonames \
+	validate-comunica-tcga-a validate-comunica-tcga-e validate-comunica-tcga-m \
 	generate-clean-results validate-clean-results audit-queries report-counts report
 
 RAW_DATASETS_DIR  = ./raw_datasets
@@ -18,12 +23,15 @@ QUERIES_DIR       = ./queries
 ARCHIVE_DIR       = $(RAW_DATASETS_DIR)/_archive
 DATASET_DIR       = ./datasets
 STATS_DIR         = $(DATASET_DIR)/stats
+HDT_DIR           = $(DATASET_DIR)/hdt
 TMP_DIR           = $(DATASET_DIR)/.tmp
 REPORT_DIR        = ./reports
 MERGE_CLEAN_BIN   = ./merge_clean/bin/merge_clean_nt
 CLEAN_RDF_BIN     = ./merge_clean/bin/merge_clean_rdf
 CLEAN_RESULTS_BIN = ./merge_clean/bin/clean_results
 SOP_BIN           = sop
+VALID_DIR         = $(DATASET_DIR)/.validated
+COMUNICA_DIR      = $(HDT_DIR)/.validated
 
 # -stats sidecar for the dataset being built
 STATS = -stats $(STATS_DIR)/$(notdir $(basename $@)).csv
@@ -61,10 +69,14 @@ TCGA_M_OUT      = $(DATASET_DIR)/LinkedTCGA-M.ttl
 DBPEDIA_DIR     = $(RAW_DATASETS_DIR)/DBPedia-Subset
 DBPEDIA_OUT     = $(DATASET_DIR)/DBPedia-Subset.nt
 
+DATASET_OUTS = $(AFFYMETRIX_OUT) $(DRUGBANK_OUT) $(LMDB_OUT) $(JAMENDO_OUT) $(NYT_OUT) \
+	$(SWDFOOD_OUT) $(DBPEDIA_OUT) $(CHEBI_OUT) $(KEGG_OUT) $(GEONAMES_OUT) \
+	$(TCGA_A_OUT) $(TCGA_E_OUT) $(TCGA_M_OUT)
+
 # Full pipeline: build tooling, generate every cleaned dataset into
 # $(DATASET_DIR), clean the expected query results into $(RESULTS_DIR), then
 # write the reports (triple-count conservation + fix tallies).
-pipeline: initialize-benchmark build-merge-clean generate-clean-dataset generate-clean-results validate-clean-results audit-queries report
+pipeline: initialize-benchmark build-merge-clean generate-clean-dataset validate-clean-dataset generate-hdt validate-comunica generate-clean-results validate-clean-results audit-queries report
 
 initialize-benchmark: download-datasets extract-datasets
 download-datasets: .download-dataset-stamp
@@ -78,7 +90,9 @@ extract-datasets: $(RAW_DATASETS_DIR)/.extract-stamp
 	unzip temp.zip -d ./
 	rm temp.zip
 	@echo "Setting the repository architecture."
+	mkdir -p $(RAW_DATASETS_DIR)
 	mv ./large-rdf-bench/queries ./
+	mv ./large-rdf-bench/results $(RAW_RESULTS_DIR)
 	mv ./large-rdf-bench/sources $(ARCHIVE_DIR)
 	rm -r ./large-rdf-bench
 	touch $@
@@ -98,7 +112,7 @@ $(MERGE_CLEAN_BIN) $(CLEAN_RDF_BIN) $(CLEAN_RESULTS_BIN):
 	$(MAKE) -C merge_clean build
 
 # Create output directories on demand (order-only prerequisites below).
-$(DATASET_DIR) $(STATS_DIR) $(RESULTS_DIR) $(RESULTS_DIR)/stats $(REPORT_DIR):
+$(DATASET_DIR) $(STATS_DIR) $(HDT_DIR) $(VALID_DIR) $(COMUNICA_DIR) $(RESULTS_DIR) $(RESULTS_DIR)/stats $(REPORT_DIR):
 	mkdir -p $@
 
 # ---------------------------------------------------------------------------
@@ -157,18 +171,19 @@ define clean_rdf_merge
 	@for f in $(2)/*.rdf; do $(CLEAN_RDF_BIN) -o "$(TMP_DIR)/$(1)/$$(basename $$f)" "$$f"; done
 	$(SOP_BIN) parse --multiple $(TMP_DIR)/$(1)/*.rdf m- ! serialize -f ntriples -o $@
 	@rm -rf $(TMP_DIR)/$(1)
+	@$(CLEAN_RDF_BIN) -o /dev/null -stats $(STATS_DIR)/$(1).csv '$(2)/*.rdf'
 endef
 
 generate-jamendo: $(JAMENDO_OUT)
-$(JAMENDO_OUT): $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract-stamp | $(DATASET_DIR)
+$(JAMENDO_OUT): $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract-stamp | $(DATASET_DIR) $(STATS_DIR)
 	$(call clean_rdf_merge,Jamendo,$(JAMENDO_DIR))
 
 generate-nyt: $(NYT_OUT)
-$(NYT_OUT): $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract-stamp | $(DATASET_DIR)
+$(NYT_OUT): $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract-stamp | $(DATASET_DIR) $(STATS_DIR)
 	$(call clean_rdf_merge,NYT,$(NYT_DIR))
 
 generate-swdfood: $(SWDFOOD_OUT)
-$(SWDFOOD_OUT): $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract-stamp | $(DATASET_DIR)
+$(SWDFOOD_OUT): $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract-stamp | $(DATASET_DIR) $(STATS_DIR)
 	$(call clean_rdf_merge,SWDFood,$(SWDFOOD_DIR))
 
 # Mixed N-Triples + RDF/XML sources -> .nt:
@@ -184,23 +199,26 @@ $(DBPEDIA_OUT): $(MERGE_CLEAN_BIN) $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract
 # so every source line is accounted for as a triple or a documented join
 # (no triples lost or added). Printed at the end of the pipeline.
 # ---------------------------------------------------------------------------
-report-counts: generate-clean-dataset | $(REPORT_DIR)
+report-counts: $(REPORT_DIR)/conservation.csv
+$(REPORT_DIR)/conservation.csv: $(DATASET_OUTS) | $(REPORT_DIR)
 	@DATASET_DIR=$(DATASET_DIR) STATS_DIR=$(STATS_DIR) RAW_DATASETS_DIR=$(RAW_DATASETS_DIR) \
 		REPORT_DIR=$(REPORT_DIR) ./scripts/report_counts.sh
 
 # Re-encode IRIs / fix lang tags in the expected query results so they still
 # match the cleaned datasets. One output per .srj.
-RAW_RESULTS   := $(wildcard $(RAW_RESULTS_DIR)/*.srj)
-CLEAN_RESULTS := $(patsubst $(RAW_RESULTS_DIR)/%.srj,$(RESULTS_DIR)/%.srj,$(RAW_RESULTS))
-
-generate-clean-results: $(CLEAN_RESULTS)
-
-$(RESULTS_DIR)/%.srj: $(RAW_RESULTS_DIR)/%.srj $(CLEAN_RESULTS_BIN) | $(RESULTS_DIR) $(RESULTS_DIR)/stats
-	$(CLEAN_RESULTS_BIN) -o $@ -stats $(RESULTS_DIR)/stats/$*.csv $<
+# The raw .srj come from the archive, so glob them at runtime under one stamp
+# (the set is unknown at parse time).
+generate-clean-results: $(RESULTS_DIR)/.cleaned.ok
+$(RESULTS_DIR)/.cleaned.ok: .download-dataset-stamp $(CLEAN_RESULTS_BIN) | $(RESULTS_DIR) $(RESULTS_DIR)/stats
+	@for f in $(RAW_RESULTS_DIR)/*.srj; do n=$$(basename "$$f" .srj); \
+		$(CLEAN_RESULTS_BIN) -o $(RESULTS_DIR)/$$n.srj -stats $(RESULTS_DIR)/stats/$$n.csv "$$f"; done
+	@touch $@
 
 # Each cleaned result must be valid SPARQL-JSON with the same binding count as its raw source.
-validate-clean-results: generate-clean-results
+validate-clean-results: $(RESULTS_DIR)/.validated.ok
+$(RESULTS_DIR)/.validated.ok: $(RESULTS_DIR)/.cleaned.ok | $(RESULTS_DIR)
 	@RAW_RESULTS_DIR=$(RAW_RESULTS_DIR) RESULTS_DIR=$(RESULTS_DIR) ./scripts/validate_results.sh
+	@touch $@
 
 # Audit the queries against the value-changing repairs (bare objects, language tags,
 # IRI encoding); fails only if a query hard-codes a term that the cleaning rewrote.
@@ -209,7 +227,8 @@ audit-queries:
 
 # Combined dataset fix summary + results-cleaning summary (conservation.csv is
 # written by report-counts above).
-report: report-counts generate-clean-results | $(REPORT_DIR)
+report: report-counts $(REPORT_DIR)/fix_summary.csv
+$(REPORT_DIR)/fix_summary.csv: $(DATASET_OUTS) $(RESULTS_DIR)/.cleaned.ok | $(REPORT_DIR)
 	@STATS_DIR=$(STATS_DIR) RESULTS_DIR=$(RESULTS_DIR) REPORT_DIR=$(REPORT_DIR) \
 		./scripts/fix_summary.sh
 
@@ -221,45 +240,85 @@ validate-clean-dataset: validate-affymetrix validate-jamendo validate-nyt valida
 	validate-chebi validate-kegg validate-geonames validate-drugbank validate-lmdb \
 	validate-tcga-a validate-tcga-e validate-tcga-m validate-dbpedia
 
-validate-affymetrix: $(AFFYMETRIX_OUT)
-	$(SOP_BIN) parse $< ! null
+# ---------------------------------------------------------------------------
+# HDT: serialize each cleaned dataset to HDT
+# ---------------------------------------------------------------------------
+define rdf2hdt
+	docker run --rm -v $(abspath $(DATASET_DIR)):/data --entrypoint sh rdfhdt/hdt-cpp \
+		-c "rdf2hdt -f $(3) /data/$(1).$(2) /data/hdt/$(1).hdt && chown $$(id -u):$$(id -g) /data/hdt/$(1).hdt"
+endef
 
-validate-jamendo: $(JAMENDO_OUT)
-	$(SOP_BIN) parse $< ! null
+generate-hdt: $(HDT_DIR)/Affymetrix.hdt $(HDT_DIR)/DrugBank.hdt $(HDT_DIR)/LMDB.hdt \
+	$(HDT_DIR)/Jamendo.hdt $(HDT_DIR)/NYT.hdt $(HDT_DIR)/SWDFood.hdt $(HDT_DIR)/DBPedia-Subset.hdt \
+	$(HDT_DIR)/ChEBI.hdt $(HDT_DIR)/KEGG.hdt $(HDT_DIR)/GeoNames.hdt \
+	$(HDT_DIR)/LinkedTCGA-A.hdt $(HDT_DIR)/LinkedTCGA-E.hdt $(HDT_DIR)/LinkedTCGA-M.hdt
 
-validate-nyt: $(NYT_OUT)
-	$(SOP_BIN) parse $< ! null
+$(HDT_DIR)/%.hdt: $(DATASET_DIR)/%.nt | $(HDT_DIR)
+	$(call rdf2hdt,$*,nt,ntriples)
+$(HDT_DIR)/%.hdt: $(DATASET_DIR)/%.ttl | $(HDT_DIR)
+	$(call rdf2hdt,$*,ttl,turtle)
 
-validate-swdfood: $(SWDFOOD_OUT)
-	$(SOP_BIN) parse $< ! null
+# ---------------------------------------------------------------------------
+# Engine-load check: each dataset's HDT must load in Comunica and answer
+# ASK { ?s ?p ?o } with `true`. The .ok stamp (keyed off the HDT) makes this
+# skip on re-runs unless the HDT changed; `make clean-stamps` forces a re-check.
+# ---------------------------------------------------------------------------
+$(COMUNICA_DIR)/%.ok: $(HDT_DIR)/%.hdt | $(COMUNICA_DIR)
+	@[ "$$(comunica-sparql-hdt hdt@$< -q 'ASK { ?s ?p ?o }' 2>/dev/null)" = true ] && { echo "PASS $*"; touch $@; } || { echo "FAIL $*"; exit 1; }
 
-validate-chebi: $(CHEBI_OUT)
-	$(SOP_BIN) parse $< ! null
+validate-comunica: validate-comunica-affymetrix validate-comunica-drugbank validate-comunica-lmdb \
+	validate-comunica-jamendo validate-comunica-nyt validate-comunica-swdfood validate-comunica-dbpedia \
+	validate-comunica-chebi validate-comunica-kegg validate-comunica-geonames \
+	validate-comunica-tcga-a validate-comunica-tcga-e validate-comunica-tcga-m
 
-validate-kegg: $(KEGG_OUT)
-	$(SOP_BIN) parse $< ! null
+validate-comunica-affymetrix: $(COMUNICA_DIR)/Affymetrix.ok
+validate-comunica-drugbank:   $(COMUNICA_DIR)/DrugBank.ok
+validate-comunica-lmdb:       $(COMUNICA_DIR)/LMDB.ok
+validate-comunica-jamendo:    $(COMUNICA_DIR)/Jamendo.ok
+validate-comunica-nyt:        $(COMUNICA_DIR)/NYT.ok
+validate-comunica-swdfood:    $(COMUNICA_DIR)/SWDFood.ok
+validate-comunica-dbpedia:    $(COMUNICA_DIR)/DBPedia-Subset.ok
+validate-comunica-chebi:      $(COMUNICA_DIR)/ChEBI.ok
+validate-comunica-kegg:       $(COMUNICA_DIR)/KEGG.ok
+validate-comunica-geonames:   $(COMUNICA_DIR)/GeoNames.ok
+validate-comunica-tcga-a:     $(COMUNICA_DIR)/LinkedTCGA-A.ok
+validate-comunica-tcga-e:     $(COMUNICA_DIR)/LinkedTCGA-E.ok
+validate-comunica-tcga-m:     $(COMUNICA_DIR)/LinkedTCGA-M.ok
 
-validate-geonames: $(GEONAMES_OUT)
-	$(SOP_BIN) parse $< ! null
+# The .ok stamp (keyed off the cleaned dataset) makes a re-run skip sop unless
+# the dataset changed; `make clean-stamps` forces a re-parse.
+$(VALID_DIR)/%.ok: $(DATASET_DIR)/% | $(VALID_DIR)
+	$(SOP_BIN) parse $< ! null && touch $@
 
-validate-drugbank: $(DRUGBANK_OUT)
-	$(SOP_BIN) parse $< ! null
+validate-affymetrix: $(VALID_DIR)/Affymetrix.nt.ok
+validate-drugbank:   $(VALID_DIR)/DrugBank.nt.ok
+validate-lmdb:       $(VALID_DIR)/LMDB.nt.ok
+validate-jamendo:    $(VALID_DIR)/Jamendo.nt.ok
+validate-nyt:        $(VALID_DIR)/NYT.nt.ok
+validate-swdfood:    $(VALID_DIR)/SWDFood.nt.ok
+validate-dbpedia:    $(VALID_DIR)/DBPedia-Subset.nt.ok
+validate-chebi:      $(VALID_DIR)/ChEBI.ttl.ok
+validate-kegg:       $(VALID_DIR)/KEGG.ttl.ok
+validate-geonames:   $(VALID_DIR)/GeoNames.ttl.ok
+validate-tcga-a:     $(VALID_DIR)/LinkedTCGA-A.ttl.ok
+validate-tcga-e:     $(VALID_DIR)/LinkedTCGA-E.ttl.ok
+validate-tcga-m:     $(VALID_DIR)/LinkedTCGA-M.ttl.ok
 
-validate-lmdb: $(LMDB_OUT)
-	$(SOP_BIN) parse $< ! null
+# Remove generated outputs: cleaned datasets (+ HDT, stats, .tmp), cleaned
+# results, reports, and the built merge_clean tooling.
+clean-generation:
+	$(MAKE) -C merge_clean clean
+	rm -rf $(DATASET_DIR) $(RESULTS_DIR) $(REPORT_DIR)
 
-validate-tcga-a: $(TCGA_A_OUT)
-	$(SOP_BIN) parse $< ! null
+# Remove the downloaded + extracted sources, forcing a fresh download next run.
+clean-download:
+	rm -f .download-dataset-stamp temp.zip
+	rm -rf $(QUERIES_DIR) $(RAW_DATASETS_DIR) $(RAW_RESULTS_DIR) large-rdf-bench
 
-validate-tcga-e: $(TCGA_E_OUT)
-	$(SOP_BIN) parse $< ! null
+# Remove only the validation stamps, forcing every sop/comunica/results check to
+# re-run next time without regenerating any dataset, HDT, or result.
+clean-stamps:
+	rm -rf $(VALID_DIR) $(COMUNICA_DIR) $(RESULTS_DIR)/.validated.ok
 
-validate-tcga-m: $(TCGA_M_OUT)
-	$(SOP_BIN) parse $< ! null
-
-validate-dbpedia: $(DBPEDIA_OUT)
-	$(SOP_BIN) parse $< ! null
-
-clean:
-	rm -f .download-dataset-stamp
-	rm -f $(RAW_DATASETS_DIR)/.extract-stamp
+# Full wipe.
+clean: clean-generation clean-download clean-stamps

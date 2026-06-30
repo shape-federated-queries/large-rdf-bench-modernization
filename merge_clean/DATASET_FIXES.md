@@ -101,6 +101,12 @@ Inside a literal, a backslash must introduce a valid escape (`\t \b \n \r \f \" 
 
 ---
 
+### NUL bytes in literals (Affymetrix)
+
+A few Affymetrix `target-description` literals carry raw NUL (`0x00`) bytes inside the value (two in the cleaned dump, passed through from the upstream Bio2RDF source), e.g. `"… putative␀CCR4-associated factor …"`. N-Triples does not forbid NUL, so `sop` accepts it, but it cannot be escaped away for our purposes: HDT stores dictionary entries as NUL-terminated C strings, so a literal containing NUL fails to serialise (`rdf2hdt`: *"Could not convert triple to IDS"*). The cleaner therefore **replaces each NUL with a space** — removing it while preserving the word boundary it sat on (counted as `nulls_stripped`).
+
+---
+
 ### UTF-16 surrogate-pair escapes (DBPedia)
 
 A `\uXXXX` escape must denote a single Unicode scalar value. DBPedia contains labels produced by a converter that emitted **UTF-16 surrogate pairs** as two `\u` escapes — each is `\u` followed by four valid hex digits, but the code points fall in the surrogate range `U+D800`–`U+DFFF`, which is not valid on its own:

@@ -29,6 +29,7 @@ type Stats struct {
 	SurrogatesCombined      int64 // \uD8xx\uDCxx surrogate pairs merged to one char
 	BareObjectsQuoted       int64 // bare alphabetic object tokens wrapped in quotes
 	LangTagsFixed           int64 // malformed xml:lang reduced to its primary subtag
+	NullsStripped           int64 // NUL (0x00) bytes in a literal replaced with a space
 }
 
 // fixLangTag returns v unchanged if it is a well-formed language tag
@@ -159,12 +160,14 @@ func (s *Stats) WriteCSV(w io.Writer) error {
 		"iris_modified,bytes_encoded,brackets_encoded,control_encoded,"+
 			"stray_percent_fixed,curies_expanded,port_colon_fixed,"+
 			"edge_space_stripped,quotes_converted,multiline_literals_joined,"+
-			"escapes_fixed,surrogates_combined,bare_objects_quoted,lang_tags_fixed\n"+
-			"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+			"escapes_fixed,surrogates_combined,bare_objects_quoted,lang_tags_fixed,"+
+			"nulls_stripped\n"+
+			"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 		s.IRIsModified, s.BytesEncoded, s.BracketsEncoded, s.ControlEncoded,
 		s.StrayPercentFixed, s.CuriesExpanded, s.PortColonFixed,
 		s.EdgeSpaceStripped, s.QuotesConverted, s.MultilineLiteralsJoined,
-		s.EscapesFixed, s.SurrogatesCombined, s.BareObjectsQuoted, s.LangTagsFixed)
+		s.EscapesFixed, s.SurrogatesCombined, s.BareObjectsQuoted, s.LangTagsFixed,
+		s.NullsStripped)
 	return err
 }
 

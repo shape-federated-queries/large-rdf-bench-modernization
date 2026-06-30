@@ -36,6 +36,13 @@ func CleanLine(line []byte, out *[]byte, baseURI string, st *Stats, inLiteral bo
 				if st != nil {
 					st.EscapesFixed++
 				}
+			case 0:
+				// NUL is invalid in a literal and breaks HDT's NUL-terminated
+				// dictionary; replace it with a space to keep word boundaries.
+				*out = append(*out, ' ')
+				if st != nil {
+					st.NullsStripped++
+				}
 			default:
 				*out = append(*out, b)
 			}
