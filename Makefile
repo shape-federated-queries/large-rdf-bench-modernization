@@ -1,4 +1,4 @@
-.PHONY: clean clean-generation clean-download clean-stamps pipeline \
+.PHONY: clean clean-generation clean-download clean-validation-stamps pipeline \
 	download-datasets initialize-benchmark extract-datasets \
 	build-merge-clean \
 	generate-clean-dataset \
@@ -9,7 +9,7 @@
 	validate-affymetrix validate-jamendo validate-nyt validate-swdfood \
 	validate-chebi validate-kegg validate-geonames validate-drugbank validate-lmdb \
 	validate-tcga-a validate-tcga-e validate-tcga-m validate-dbpedia \
-	generate-hdt validate-comunica \
+	generate-hdt hdt-java-image validate-comunica \
 	validate-comunica-affymetrix validate-comunica-drugbank validate-comunica-lmdb \
 	validate-comunica-jamendo validate-comunica-nyt validate-comunica-swdfood validate-comunica-dbpedia \
 	validate-comunica-chebi validate-comunica-kegg validate-comunica-geonames \
@@ -196,8 +196,6 @@ $(DBPEDIA_OUT): $(MERGE_CLEAN_BIN) $(CLEAN_RDF_BIN) $(RAW_DATASETS_DIR)/.extract
 # ---------------------------------------------------------------------------
 # Triple-count report: for every line-based dataset, confirm
 #   clean_output_lines + multiline_literals_joined == raw_source_lines
-# so every source line is accounted for as a triple or a documented join
-# (no triples lost or added). Printed at the end of the pipeline.
 # ---------------------------------------------------------------------------
 report-counts: $(REPORT_DIR)/conservation.csv
 $(REPORT_DIR)/conservation.csv: $(DATASET_OUTS) | $(REPORT_DIR)
@@ -243,25 +241,75 @@ validate-clean-dataset: validate-affymetrix validate-jamendo validate-nyt valida
 # ---------------------------------------------------------------------------
 # HDT: serialize each cleaned dataset to HDT
 # ---------------------------------------------------------------------------
-define rdf2hdt
-	docker run --rm -v $(abspath $(DATASET_DIR)):/data --entrypoint sh rdfhdt/hdt-cpp \
-		-c "rdf2hdt -f $(3) /data/$(1).$(2) /data/hdt/$(1).hdt && chown $$(id -u):$$(id -g) /data/hdt/$(1).hdt"
+# HDT backend, per dataset. Default `cpp` (fast in-memory rdfhdt/hdt-cpp) for
+# the datasets that fit in RAM; `LinkedTCGA-E/M` are pinned to `java` below
+# because they exceed RAM. `java` uses hdt-java v3 HDTCatTree (bounded memory,
+# any size, slower). Force one backend everywhere with e.g. `make HDT_BACKEND=java`.
+HDT_BACKEND ?= cpp
+ifeq ($(filter $(HDT_BACKEND),java cpp),)
+$(error HDT_BACKEND must be 'java' or 'cpp')
+endif
+
+# hdt-java v3 (cattree): scratch on the mounted volume, removed after. No
+# upstream image ships v3, so build it on demand.
+define rdf2hdt_java
+	docker run --rm -v $(abspath $(DATASET_DIR)):/data -w /data --entrypoint sh hdt-java:v3 \
+		-c "rm -rf /data/.cattree-$(1) && rdf2hdt.sh -cattree -cattreelocation /data/.cattree-$(1) -rdftype $(3) /data/$(1).$(2) /data/hdt/$(1).hdt && rm -rf /data/.cattree-$(1) && chown $$(id -u):$$(id -g) /data/hdt/$(1).hdt"
 endef
 
-generate-hdt: $(HDT_DIR)/Affymetrix.hdt $(HDT_DIR)/DrugBank.hdt $(HDT_DIR)/LMDB.hdt \
+define rdf2hdt_cpp
+	docker run --rm -v $(abspath $(DATASET_DIR)):/data -w /data --entrypoint sh rdfhdt/hdt-cpp \
+		-c "rdf2hdt $(HDT_OPTS) -f $(3) /data/$(1).$(2) /data/hdt/$(1).hdt && chown $$(id -u):$$(id -g) /data/hdt/$(1).hdt"
+endef
+
+# External index (.hdt.index.v1-1, all triple patterns), built from the finished
+# HDT by loading it once with hdtSearch — independent of the creation backend.
+# The object index is built in the JVM heap; the largest datasets (E/M) need
+# well above the default (~1/4 RAM), so raise the ceiling (override on smaller
+# or larger machines with e.g. HDT_INDEX_XMX=8g).
+HDT_INDEX_XMX ?= 12g
+define hdtindex
+	docker run --rm -v $(abspath $(DATASET_DIR)):/data -w /data -e JAVA_OPTIONS=-Xmx$(HDT_INDEX_XMX) --entrypoint sh hdt-java:v3 \
+		-c "rm -f /data/hdt/$(1).hdt.index.v1-1 && printf 'exit\n' | hdtSearch.sh /data/hdt/$(1).hdt >/dev/null && chown $$(id -u):$$(id -g) /data/hdt/$(1).hdt.index.v1-1"
+endef
+
+# Build the local hdt-java v3 image on demand.
+hdt-java-image:
+	@docker image inspect hdt-java:v3 >/dev/null 2>&1 || \
+		docker build -t hdt-java:v3 -f docker/hdt-java-v3.Dockerfile docker/
+
+# hdt-cpp: the 6 GB Affymetrix/DBPedia need the disk loader to fit in RAM.
+$(HDT_DIR)/Affymetrix.hdt $(HDT_DIR)/DBPedia-Subset.hdt: HDT_OPTS = -o "loader.type=disk"
+
+# LinkedTCGA-E/M exceed RAM in hdt-cpp; always build them with the bounded java
+# backend (and its image), regardless of HDT_BACKEND.
+$(HDT_DIR)/LinkedTCGA-E.hdt $(HDT_DIR)/LinkedTCGA-M.hdt: HDT_BACKEND := java
+$(HDT_DIR)/LinkedTCGA-E.hdt $(HDT_DIR)/LinkedTCGA-M.hdt: | hdt-java-image
+
+# When forced globally to java, every target needs the image.
+ifeq ($(HDT_BACKEND),java)
+HDT_IMAGE_DEP := hdt-java-image
+endif
+
+HDT_FILES = $(HDT_DIR)/Affymetrix.hdt $(HDT_DIR)/DrugBank.hdt $(HDT_DIR)/LMDB.hdt \
 	$(HDT_DIR)/Jamendo.hdt $(HDT_DIR)/NYT.hdt $(HDT_DIR)/SWDFood.hdt $(HDT_DIR)/DBPedia-Subset.hdt \
 	$(HDT_DIR)/ChEBI.hdt $(HDT_DIR)/KEGG.hdt $(HDT_DIR)/GeoNames.hdt \
 	$(HDT_DIR)/LinkedTCGA-A.hdt $(HDT_DIR)/LinkedTCGA-E.hdt $(HDT_DIR)/LinkedTCGA-M.hdt
 
-$(HDT_DIR)/%.hdt: $(DATASET_DIR)/%.nt | $(HDT_DIR)
-	$(call rdf2hdt,$*,nt,ntriples)
-$(HDT_DIR)/%.hdt: $(DATASET_DIR)/%.ttl | $(HDT_DIR)
-	$(call rdf2hdt,$*,ttl,turtle)
+generate-hdt: $(HDT_FILES) $(addsuffix .index.v1-1,$(HDT_FILES))
+
+$(HDT_DIR)/%.hdt: $(DATASET_DIR)/%.nt | $(HDT_DIR) $(HDT_IMAGE_DEP)
+	$(call rdf2hdt_$(HDT_BACKEND),$*,nt,ntriples)
+$(HDT_DIR)/%.hdt: $(DATASET_DIR)/%.ttl | $(HDT_DIR) $(HDT_IMAGE_DEP)
+	$(call rdf2hdt_$(HDT_BACKEND),$*,ttl,turtle)
+
+$(HDT_DIR)/%.hdt.index.v1-1: $(HDT_DIR)/%.hdt | hdt-java-image
+	$(call hdtindex,$*)
 
 # ---------------------------------------------------------------------------
 # Engine-load check: each dataset's HDT must load in Comunica and answer
 # ASK { ?s ?p ?o } with `true`. The .ok stamp (keyed off the HDT) makes this
-# skip on re-runs unless the HDT changed; `make clean-stamps` forces a re-check.
+# skip on re-runs unless the HDT changed; `make clean-validation-stamps` forces a re-check.
 # ---------------------------------------------------------------------------
 $(COMUNICA_DIR)/%.ok: $(HDT_DIR)/%.hdt | $(COMUNICA_DIR)
 	@[ "$$(comunica-sparql-hdt hdt@$< -q 'ASK { ?s ?p ?o }' 2>/dev/null)" = true ] && { echo "PASS $*"; touch $@; } || { echo "FAIL $*"; exit 1; }
@@ -286,7 +334,7 @@ validate-comunica-tcga-e:     $(COMUNICA_DIR)/LinkedTCGA-E.ok
 validate-comunica-tcga-m:     $(COMUNICA_DIR)/LinkedTCGA-M.ok
 
 # The .ok stamp (keyed off the cleaned dataset) makes a re-run skip sop unless
-# the dataset changed; `make clean-stamps` forces a re-parse.
+# the dataset changed; `make clean-validation-stamps` forces a re-parse.
 $(VALID_DIR)/%.ok: $(DATASET_DIR)/% | $(VALID_DIR)
 	$(SOP_BIN) parse $< ! null && touch $@
 
@@ -304,8 +352,7 @@ validate-tcga-a:     $(VALID_DIR)/LinkedTCGA-A.ttl.ok
 validate-tcga-e:     $(VALID_DIR)/LinkedTCGA-E.ttl.ok
 validate-tcga-m:     $(VALID_DIR)/LinkedTCGA-M.ttl.ok
 
-# Remove generated outputs: cleaned datasets (+ HDT, stats, .tmp), cleaned
-# results, reports, and the built merge_clean tooling.
+# Remove generated outputs
 clean-generation:
 	$(MAKE) -C merge_clean clean
 	rm -rf $(DATASET_DIR) $(RESULTS_DIR) $(REPORT_DIR)
@@ -315,10 +362,9 @@ clean-download:
 	rm -f .download-dataset-stamp temp.zip
 	rm -rf $(QUERIES_DIR) $(RAW_DATASETS_DIR) $(RAW_RESULTS_DIR) large-rdf-bench
 
-# Remove only the validation stamps, forcing every sop/comunica/results check to
-# re-run next time without regenerating any dataset, HDT, or result.
-clean-stamps:
+# Remove only the validation stamps
+clean-validation-stamps:
 	rm -rf $(VALID_DIR) $(COMUNICA_DIR) $(RESULTS_DIR)/.validated.ok
 
 # Full wipe.
-clean: clean-generation clean-download clean-stamps
+clean: clean-generation clean-download clean-validation-stamps

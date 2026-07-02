@@ -20,7 +20,7 @@ This repo **modernizes the benchmark, reproducibly**:
 - [Go](https://go.dev/dl/) — builds the `merge_clean` tooling
 - [7z](https://www.7-zip.org/) — extracts the `.7z` source archives
 - [sophia-cli](https://github.com/pchampin/sophia-cli) (`sop`) — validates, converts, and merges the cleaned data
-- [Docker](https://docs.docker.com/get-docker/) — runs the [rdfhdt/hdt-docker](https://github.com/rdfhdt/hdt-docker) image (`rdf2hdt`) to serialize each cleaned dataset to HDT
+- [Docker](https://docs.docker.com/get-docker/) — builds and runs a local [hdt-java](https://github.com/rdfhdt/hdt-java) v3 image (`docker/hdt-java-v3.Dockerfile`) that serializes each cleaned dataset to HDT with bounded memory (`-cattree`)
 - [@comunica/query-sparql-hdt](https://www.npmjs.com/package/@comunica/query-sparql-hdt) (`comunica-sparql-hdt`) — loads each dataset's HDT in a real SPARQL engine to validate it
 - [GNU make](https://www.gnu.org/software/make/) - building orchestrator
 
@@ -47,6 +47,18 @@ or
 make pipeline
 ```
 Builds the whole benchmark with the new results.
+
+HDT generation picks a backend per dataset, overridable with `HDT_BACKEND` (applies to `make`, `make pipeline`, and `make generate-hdt`). Memory figures below are for the build machine (~15 GB RAM):
+
+- Default — the fast in-memory `rdfhdt/hdt-cpp` loader for the datasets that fit in RAM; `LinkedTCGA-E/M` are built with hdt-java v3 `HDTCatTree` (bounded memory) because their dictionaries exceed ~15 GB of RAM.
+- `HDT_BACKEND=java` — force `HDTCatTree` for every dataset (bounded memory, slower; builds the local image on first run).
+- `HDT_BACKEND=cpp` — force `rdfhdt/hdt-cpp` for every dataset (faster, but `LinkedTCGA-E/M` exceed ~15 GB of RAM and will OOM).
+
+```sh
+make pipeline                   # default: cpp, + java for LinkedTCGA-E/M
+make pipeline HDT_BACKEND=java  # bounded memory everywhere, slower
+make pipeline HDT_BACKEND=cpp   # cpp everywhere, OOMs on LinkedTCGA-E/M
+```
 
 ### Generation
 
