@@ -1,6 +1,7 @@
 NT_BIN      := bin/merge_clean_nt
 RDF_BIN     := bin/merge_clean_rdf
 RESULTS_BIN := bin/clean_results
+TABLE_BIN   := bin/report_table
 
 .PHONY: build test lint ci clean
 
@@ -8,6 +9,7 @@ build:
 	go build -o $(NT_BIN)      ./cmd/merge_clean_nt
 	go build -o $(RDF_BIN)     ./cmd/merge_clean_rdf
 	go build -o $(RESULTS_BIN) ./cmd/clean_results
+	go build -o $(TABLE_BIN)   ./cmd/report_table
 
 test: build
 	go test ./...
@@ -18,4 +20,4 @@ lint:
 ci: lint test
 
 clean:
-	rm -f $(NT_BIN) $(RDF_BIN) $(RESULTS_BIN)
+	rm -f $(NT_BIN) $(RDF_BIN) $(RESULTS_BIN) $(TABLE_BIN)

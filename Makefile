@@ -14,7 +14,7 @@
 	validate-comunica-jamendo validate-comunica-nyt validate-comunica-swdfood validate-comunica-dbpedia \
 	validate-comunica-chebi validate-comunica-kegg validate-comunica-geonames \
 	validate-comunica-tcga-a validate-comunica-tcga-e validate-comunica-tcga-m \
-	generate-clean-results validate-clean-results audit-queries report-counts report
+	generate-clean-results validate-clean-results audit-queries report-counts report report-table
 
 RAW_DATASETS_DIR  = ./raw_datasets
 RAW_RESULTS_DIR   = ./raw_results
@@ -29,6 +29,7 @@ REPORT_DIR        = ./reports
 MERGE_CLEAN_BIN   = ./merge_clean/bin/merge_clean_nt
 CLEAN_RDF_BIN     = ./merge_clean/bin/merge_clean_rdf
 CLEAN_RESULTS_BIN = ./merge_clean/bin/clean_results
+REPORT_TABLE_BIN  = ./merge_clean/bin/report_table
 SOP_BIN           = sop
 VALID_DIR         = $(DATASET_DIR)/.validated
 COMUNICA_DIR      = $(HDT_DIR)/.validated
@@ -108,11 +109,11 @@ $(RAW_DATASETS_DIR)/.extract-stamp: .download-dataset-stamp
 build-merge-clean:
 	$(MAKE) -C merge_clean build
 
-$(MERGE_CLEAN_BIN) $(CLEAN_RDF_BIN) $(CLEAN_RESULTS_BIN):
+$(MERGE_CLEAN_BIN) $(CLEAN_RDF_BIN) $(CLEAN_RESULTS_BIN) $(REPORT_TABLE_BIN):
 	$(MAKE) -C merge_clean build
 
 # Create output directories on demand (order-only prerequisites below).
-$(DATASET_DIR) $(STATS_DIR) $(HDT_DIR) $(VALID_DIR) $(COMUNICA_DIR) $(RESULTS_DIR) $(RESULTS_DIR)/stats $(REPORT_DIR):
+$(DATASET_DIR) $(STATS_DIR) $(HDT_DIR) $(VALID_DIR) $(COMUNICA_DIR) $(RESULTS_DIR) $(RESULTS_DIR)/stats $(REPORT_DIR) $(REPORT_DIR)/tables:
 	mkdir -p $@
 
 # ---------------------------------------------------------------------------
@@ -225,10 +226,15 @@ audit-queries:
 
 # Combined dataset fix summary + results-cleaning summary (conservation.csv is
 # written by report-counts above).
-report: report-counts $(REPORT_DIR)/fix_summary.csv
+report: report-counts $(REPORT_DIR)/fix_summary.csv $(REPORT_DIR)/tables/fix_summary.tex
 $(REPORT_DIR)/fix_summary.csv: $(DATASET_OUTS) $(RESULTS_DIR)/.cleaned.ok | $(REPORT_DIR)
 	@STATS_DIR=$(STATS_DIR) RESULTS_DIR=$(RESULTS_DIR) REPORT_DIR=$(REPORT_DIR) \
 		./scripts/fix_summary.sh
+
+# LaTeX fix-summary table for the paper.
+report-table: $(REPORT_DIR)/tables/fix_summary.tex
+$(REPORT_DIR)/tables/fix_summary.tex: $(REPORT_DIR)/fix_summary.csv $(REPORT_TABLE_BIN) | $(REPORT_DIR)/tables
+	$(REPORT_TABLE_BIN) -fixes $< -o $@
 
 # ---------------------------------------------------------------------------
 # Validation: parse every cleaned dataset with sophia-cli; errors fail the build.
