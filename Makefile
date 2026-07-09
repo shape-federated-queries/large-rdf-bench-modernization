@@ -109,8 +109,20 @@ $(RAW_DATASETS_DIR)/.extract-stamp: .download-dataset-stamp
 build-merge-clean:
 	$(MAKE) -C merge_clean build
 
-$(MERGE_CLEAN_BIN) $(CLEAN_RDF_BIN) $(CLEAN_RESULTS_BIN) $(REPORT_TABLE_BIN):
-	$(MAKE) -C merge_clean build
+# Rebuild each tool only when its own sources change. go build rewrites the
+# binary's mtime even when unchanged, so an over-broad dep would needlessly
+# re-trigger the dataset pipeline.
+nontest  = $(filter-out %_test.go,$(wildcard $(1)))
+PROC_SRC = $(call nontest,merge_clean/processor/*.go)
+
+$(MERGE_CLEAN_BIN): $(call nontest,merge_clean/cmd/merge_clean_nt/*.go) $(PROC_SRC) merge_clean/go.mod
+	cd merge_clean && go build -o bin/merge_clean_nt ./cmd/merge_clean_nt
+$(CLEAN_RDF_BIN): $(call nontest,merge_clean/cmd/merge_clean_rdf/*.go) $(PROC_SRC) merge_clean/go.mod
+	cd merge_clean && go build -o bin/merge_clean_rdf ./cmd/merge_clean_rdf
+$(CLEAN_RESULTS_BIN): $(call nontest,merge_clean/cmd/clean_results/*.go) $(PROC_SRC) merge_clean/go.mod
+	cd merge_clean && go build -o bin/clean_results ./cmd/clean_results
+$(REPORT_TABLE_BIN): $(call nontest,merge_clean/cmd/report_table/*.go) merge_clean/cmd/report_table/table.tmpl merge_clean/go.mod
+	cd merge_clean && go build -o bin/report_table ./cmd/report_table
 
 # Create output directories on demand (order-only prerequisites below).
 $(DATASET_DIR) $(STATS_DIR) $(HDT_DIR) $(VALID_DIR) $(COMUNICA_DIR) $(RESULTS_DIR) $(RESULTS_DIR)/stats $(REPORT_DIR) $(REPORT_DIR)/tables:

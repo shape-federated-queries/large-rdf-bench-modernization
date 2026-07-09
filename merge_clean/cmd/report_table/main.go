@@ -30,16 +30,19 @@ var tmplText string
 // (brackets/control/stray), so they are already subsumed by it. escapes_fixed
 // is omitted only because it is zero everywhere; a row whose total is zero is
 // skipped at render time regardless.
+//
+// nulls_stripped and quotes_converted are also omitted: they are tooling
+// concessions (HDT's NUL-terminated dictionary, and RDF/XML single-quote
+// attributes that some parsers reject), not strict standards repairs, so they
+// are reported in prose rather than in this table.
 var fixRows = []struct{ Col, Class, Label string }{
 	{"bytes_encoded", "IRI", "Illegal characters percent-encoded"},
-	{"curies_expanded", "IRI", "CURIE tokens expanded to absolute IRIs"},
+	{"curies_expanded", "IRI", "Relative CURIE-like terms absolutised"},
 	{"port_colon_fixed", "IRI", "Invalid authority colons encoded"},
 	{"edge_space_stripped", "IRI", "Leading/trailing spaces stripped"},
 	{"multiline_literals_joined", "Literal", "Multiline literals joined"},
 	{"surrogates_combined", "Literal", "UTF-16 surrogate pairs combined"},
-	{"nulls_stripped", "Literal", "NUL bytes stripped"},
-	{"quotes_converted", "Serialization", "Single-quoted XML attributes converted"},
-	{"bare_objects_quoted", "Serialization", "Unquoted literals quoted"},
+	{"bare_objects_quoted", "Literal", "Unquoted literals quoted"},
 	{"lang_tags_fixed", "Language", "Malformed language tags fixed"},
 }
 
