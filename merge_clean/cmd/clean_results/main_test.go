@@ -34,3 +34,42 @@ func TestCleanTerm(t *testing.T) {
 		t.Errorf("bnode should be untouched: %q, counts %+v", bn.Value, c)
 	}
 }
+
+func TestDecodeInlineLiteral(t *testing.T) {
+	// "text"@en -> language literal.
+	c := counts{}
+	lang := cleanTerm(term{Type: "literal", Value: `"hello world"@en`}, &c)
+	if lang.Value != "hello world" || lang.Lang != "en" || c.decoded != 1 {
+		t.Errorf("inline lang literal = %+v, decoded=%d", lang, c.decoded)
+	}
+
+	// "5"^^<dt> -> typed literal; the decoded datatype IRI is then IRI-cleaned.
+	c = counts{}
+	typed := cleanTerm(term{Type: "literal", Value: `"5"^^<http://ex.org/d[t]>`}, &c)
+	if typed.Value != "5" || typed.Datatype != "http://ex.org/d%5Bt%5D" {
+		t.Errorf("inline typed literal = %+v", typed)
+	}
+
+	// Bare "text" -> plain literal.
+	c = counts{}
+	bare := cleanTerm(term{Type: "literal", Value: `"just a quote"`}, &c)
+	if bare.Value != "just a quote" || bare.Lang != "" || bare.Datatype != "" || c.decoded != 1 {
+		t.Errorf("inline bare literal = %+v, decoded=%d", bare, c.decoded)
+	}
+
+	// Only the outer quote pair is stripped; inner quotes are content.
+	inner := cleanTerm(term{Type: "literal", Value: `"say "hi""@en`}, &counts{})
+	if inner.Value != `say "hi"` || inner.Lang != "en" {
+		t.Errorf("inner-quote literal = %+v", inner)
+	}
+
+	// A literal already carrying a lang, or with no inline syntax, is untouched.
+	proper := cleanTerm(term{Type: "literal", Value: `"x"@en`, Lang: "de"}, &counts{})
+	if proper.Value != `"x"@en` || proper.Lang != "de" {
+		t.Errorf("well-formed literal must be untouched: %+v", proper)
+	}
+	plain := cleanTerm(term{Type: "literal", Value: "just text"}, &counts{})
+	if plain.Value != "just text" || plain.Lang != "" {
+		t.Errorf("plain literal changed: %+v", plain)
+	}
+}

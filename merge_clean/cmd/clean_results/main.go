@@ -2,8 +2,11 @@
 // JSON results file (.srj) that the datasets receive, so the expected query
 // answers still match the cleaned data. It re-encodes every `uri` value and
 // `datatype` IRI (CleanIRI) and reduces a malformed `xml:lang` to its primary
-// subtag (FixLangTag). Literal `value`s are left untouched: JSON already holds
-// the canonical Unicode string, so applying N-Triples escaping would corrupt it.
+// subtag (FixLangTag). A literal whose term syntax was serialized into `value`
+// (e.g. `"text"@en` with type "literal" and no lang/datatype) is decoded back
+// into proper value + lang/datatype fields. Other literal `value`s are left
+// untouched: JSON already holds the canonical Unicode string, so applying
+// N-Triples escaping would corrupt it.
 package main
 
 import (
@@ -13,6 +16,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/shape-federated-queries/merge-clean/processor"
 )
@@ -36,7 +41,7 @@ type srj struct {
 	Boolean *bool           `json:"boolean,omitempty"`
 }
 
-type counts struct{ uris, datatypes, langs int }
+type counts struct{ uris, datatypes, langs, decoded int }
 
 func cleanTerm(t term, c *counts) term {
 	switch t.Type {
@@ -46,6 +51,10 @@ func cleanTerm(t term, c *counts) term {
 			c.uris++
 		}
 	case "literal", "typed-literal":
+		if d, ok := decodeInlineLiteral(t); ok {
+			t = d
+			c.decoded++
+		}
 		if t.Datatype != "" {
 			if d := processor.CleanIRI(t.Datatype, nil); d != t.Datatype {
 				t.Datatype = d
@@ -60,6 +69,33 @@ func cleanTerm(t term, c *counts) term {
 		}
 	}
 	return t
+}
+
+// inlineLiteral matches a literal whose term syntax was serialized into the JSON
+// value: an outer-quoted body with an optional @lang or ^^<datatype> suffix.
+// (?s) lets the body span newlines; inner quotes stay as content.
+var inlineLiteral = regexp.MustCompile(`(?s)^"(.*)"(@[A-Za-z][A-Za-z0-9-]*|\^\^<?[^<>"]*>?)?$`)
+
+// decodeInlineLiteral rewrites a literal of the form "text", "text"@en or
+// "text"^^<dt> (type "literal", no lang/datatype set) back into proper value +
+// lang/datatype fields. Literals that already carry a lang or datatype are left
+// as-is. Returns whether it changed the term.
+func decodeInlineLiteral(t term) (term, bool) {
+	if (t.Type != "literal" && t.Type != "typed-literal") || t.Lang != "" || t.Datatype != "" {
+		return t, false
+	}
+	m := inlineLiteral.FindStringSubmatch(t.Value)
+	if m == nil {
+		return t, false
+	}
+	t.Value = m[1]
+	switch suffix := m[2]; {
+	case strings.HasPrefix(suffix, "@"):
+		t.Lang = suffix[1:]
+	case strings.HasPrefix(suffix, "^^"):
+		t.Datatype = strings.Trim(suffix[2:], "<>")
+	}
+	return t, true
 }
 
 func main() {
@@ -123,7 +159,8 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Done. URIs: %d, datatypes: %d, lang tags: %d\n", c.uris, c.datatypes, c.langs)
+	fmt.Fprintf(os.Stderr, "Done. URIs: %d, datatypes: %d, lang tags: %d, literals decoded: %d\n",
+		c.uris, c.datatypes, c.langs, c.decoded)
 }
 
 func openInput(args []string) (io.Reader, func(), error) {
@@ -146,7 +183,7 @@ func writeStats(path string, c counts) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "uris_cleaned,datatypes_cleaned,lang_tags_fixed\n%d,%d,%d\n",
-		c.uris, c.datatypes, c.langs)
+	_, err = fmt.Fprintf(f, "uris_cleaned,datatypes_cleaned,lang_tags_fixed,literals_decoded\n%d,%d,%d,%d\n",
+		c.uris, c.datatypes, c.langs, c.decoded)
 	return err
 }
