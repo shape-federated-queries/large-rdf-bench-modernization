@@ -14,13 +14,15 @@
 	validate-comunica-jamendo validate-comunica-nyt validate-comunica-swdfood validate-comunica-dbpedia \
 	validate-comunica-chebi validate-comunica-kegg validate-comunica-geonames \
 	validate-comunica-tcga-a validate-comunica-tcga-e validate-comunica-tcga-m \
-	generate-clean-results validate-clean-results audit-queries report-counts report report-table
+	generate-clean-results validate-clean-results audit-queries report-counts report report-table \
+	download-results
 
 RAW_DATASETS_DIR  = ./raw_datasets
 RAW_RESULTS_DIR   = ./raw_results
 RESULTS_DIR       = ./results
 QUERIES_DIR       = ./queries
 ARCHIVE_DIR       = $(RAW_DATASETS_DIR)/_archive
+ARCHIVE           = temp.zip
 DATASET_DIR       = ./datasets
 STATS_DIR         = $(DATASET_DIR)/stats
 HDT_DIR           = $(DATASET_DIR)/hdt
@@ -83,19 +85,22 @@ initialize-benchmark: download-datasets extract-datasets
 download-datasets: .download-dataset-stamp
 extract-datasets: $(RAW_DATASETS_DIR)/.extract-stamp
 
-.download-dataset-stamp:
-	@echo "Starting download..."
-	wget https://cloud.ilabt.imec.be/index.php/s/qm8EGWCZBot9Hjj/download -O temp.zip
-	@echo "All downloads complete."
-	@echo "Unzipping archive..."
-	unzip temp.zip -d ./
-	rm temp.zip
-	@echo "Setting the repository architecture."
+.SECONDARY: $(ARCHIVE)
+$(ARCHIVE):
+	wget https://cloud.ilabt.imec.be/index.php/s/qm8EGWCZBot9Hjj/download -O $@
+
+.download-dataset-stamp: $(ARCHIVE)
+	unzip -o $(ARCHIVE) 'large-rdf-bench/sources/*' -d ./
 	mkdir -p $(RAW_DATASETS_DIR)
-	mv ./large-rdf-bench/queries ./
-	mv ./large-rdf-bench/results $(RAW_RESULTS_DIR)
 	mv ./large-rdf-bench/sources $(ARCHIVE_DIR)
-	rm -r ./large-rdf-bench
+	rm -rf ./large-rdf-bench
+	touch $@
+
+$(QUERIES_DIR)/.fetched: $(ARCHIVE)
+	unzip -o $(ARCHIVE) 'large-rdf-bench/queries/*' -d ./
+	mkdir -p $(QUERIES_DIR)
+	mv ./large-rdf-bench/queries/* $(QUERIES_DIR)/
+	rm -rf ./large-rdf-bench
 	touch $@
 
 $(RAW_DATASETS_DIR)/.extract-stamp: .download-dataset-stamp
@@ -219,8 +224,16 @@ $(REPORT_DIR)/conservation.csv: $(DATASET_OUTS) | $(REPORT_DIR)
 # match the cleaned datasets. One output per .srj.
 # The raw .srj come from the archive, so glob them at runtime under one stamp
 # (the set is unknown at parse time).
+download-results: $(RAW_RESULTS_DIR)/.fetched
+$(RAW_RESULTS_DIR)/.fetched: $(ARCHIVE)
+	unzip -o $(ARCHIVE) 'large-rdf-bench/results/*' -d ./
+	mkdir -p $(RAW_RESULTS_DIR)
+	mv ./large-rdf-bench/results/* $(RAW_RESULTS_DIR)/
+	rm -rf ./large-rdf-bench
+	touch $@
+
 generate-clean-results: $(RESULTS_DIR)/.cleaned.ok
-$(RESULTS_DIR)/.cleaned.ok: .download-dataset-stamp $(CLEAN_RESULTS_BIN) | $(RESULTS_DIR) $(RESULTS_DIR)/stats
+$(RESULTS_DIR)/.cleaned.ok: $(RAW_RESULTS_DIR)/.fetched $(CLEAN_RESULTS_BIN) | $(RESULTS_DIR) $(RESULTS_DIR)/stats
 	@for f in $(RAW_RESULTS_DIR)/*.srj; do n=$$(basename "$$f" .srj); \
 		$(CLEAN_RESULTS_BIN) -o $(RESULTS_DIR)/$$n.srj -stats $(RESULTS_DIR)/stats/$$n.csv "$$f"; done
 	@touch $@
@@ -233,7 +246,7 @@ $(RESULTS_DIR)/.validated.ok: $(RESULTS_DIR)/.cleaned.ok | $(RESULTS_DIR)
 
 # Audit the queries against the value-changing repairs (bare objects, language tags,
 # IRI encoding); fails only if a query hard-codes a term that the cleaning rewrote.
-audit-queries:
+audit-queries: $(QUERIES_DIR)/.fetched
 	@QUERIES_DIR=$(QUERIES_DIR) ./scripts/audit_queries.sh
 
 # Combined dataset fix summary + results-cleaning summary (conservation.csv is
@@ -377,7 +390,7 @@ clean-generation:
 
 # Remove the downloaded + extracted sources, forcing a fresh download next run.
 clean-download:
-	rm -f .download-dataset-stamp temp.zip
+	rm -f .download-dataset-stamp $(ARCHIVE)
 	rm -rf $(QUERIES_DIR) $(RAW_DATASETS_DIR) $(RAW_RESULTS_DIR) large-rdf-bench
 
 # Remove only the validation stamps
