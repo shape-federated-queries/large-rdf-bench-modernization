@@ -6,7 +6,10 @@
 // (e.g. `"text"@en` with type "literal" and no lang/datatype) is decoded back
 // into proper value + lang/datatype fields. Other literal `value`s are left
 // untouched: JSON already holds the canonical Unicode string, so applying
-// N-Triples escaping would corrupt it.
+// N-Triples escaping would corrupt it. Finally, a variable bound to the original
+// benchmark's unbound placeholder -- the literal 'null' -- is dropped from the
+// binding, so the expected results leave that variable unbound, as a
+// standards-compliant engine returns, instead of a spurious 'null' string.
 package main
 
 import (
@@ -41,7 +44,16 @@ type srj struct {
 	Boolean *bool           `json:"boolean,omitempty"`
 }
 
-type counts struct{ uris, datatypes, langs, decoded int }
+type counts struct{ uris, datatypes, langs, decoded, nulls int }
+
+// isNullSentinel reports whether a term is the original benchmark's placeholder
+// for an unbound variable: the literal 'null'. A standards-compliant engine
+// leaves such (typically OPTIONAL) variables unbound rather than binding this
+// sentinel, so clean_results drops it.
+func isNullSentinel(t term) bool {
+	return (t.Type == "literal" || t.Type == "typed-literal") &&
+		t.Datatype == "" && t.Lang == "" && t.Value == "'null'"
+}
 
 func cleanTerm(t term, c *counts) term {
 	switch t.Type {
@@ -126,6 +138,11 @@ func main() {
 	if doc.Results != nil {
 		for _, b := range doc.Results.Bindings {
 			for v, t := range b {
+				if isNullSentinel(t) {
+					delete(b, v)
+					c.nulls++
+					continue
+				}
 				b[v] = cleanTerm(t, &c)
 			}
 		}
@@ -159,8 +176,8 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Done. URIs: %d, datatypes: %d, lang tags: %d, literals decoded: %d\n",
-		c.uris, c.datatypes, c.langs, c.decoded)
+	fmt.Fprintf(os.Stderr, "Done. URIs: %d, datatypes: %d, lang tags: %d, literals decoded: %d, null sentinels dropped: %d\n",
+		c.uris, c.datatypes, c.langs, c.decoded, c.nulls)
 }
 
 func openInput(args []string) (io.Reader, func(), error) {
@@ -183,7 +200,7 @@ func writeStats(path string, c counts) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "uris_cleaned,datatypes_cleaned,lang_tags_fixed,literals_decoded\n%d,%d,%d,%d\n",
-		c.uris, c.datatypes, c.langs, c.decoded)
+	_, err = fmt.Fprintf(f, "uris_cleaned,datatypes_cleaned,lang_tags_fixed,literals_decoded,null_sentinels_dropped\n%d,%d,%d,%d,%d\n",
+		c.uris, c.datatypes, c.langs, c.decoded, c.nulls)
 	return err
 }
