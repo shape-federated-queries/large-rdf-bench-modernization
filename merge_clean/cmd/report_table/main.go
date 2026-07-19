@@ -37,7 +37,7 @@ var tmplText string
 // are reported in prose rather than in this table.
 var fixRows = []struct{ Col, Class, Label string }{
 	{"bytes_encoded", "IRI", "Illegal characters percent-encoded"},
-	{"curies_expanded", "IRI", "Relative CURIE-like terms absolutised"},
+	{"curies_expanded", "IRI", "Relative CURIE-like terms absolutized"},
 	{"port_colon_fixed", "IRI", "Invalid authority colons encoded"},
 	{"edge_space_stripped", "IRI", "Leading/trailing spaces stripped"},
 	{"multiline_literals_joined", "Literal", "Multiline literals joined"},

@@ -15,7 +15,7 @@
 	validate-comunica-chebi validate-comunica-kegg validate-comunica-geonames \
 	validate-comunica-tcga-a validate-comunica-tcga-e validate-comunica-tcga-m \
 	generate-clean-results validate-clean-results audit-queries report-counts report report-table \
-	download-results
+	download-results normalize-nt
 
 RAW_DATASETS_DIR  = ./raw_datasets
 RAW_RESULTS_DIR   = ./raw_results
@@ -79,7 +79,7 @@ DATASET_OUTS = $(AFFYMETRIX_OUT) $(DRUGBANK_OUT) $(LMDB_OUT) $(JAMENDO_OUT) $(NY
 # Full pipeline: build tooling, generate every cleaned dataset into
 # $(DATASET_DIR), clean the expected query results into $(RESULTS_DIR), then
 # write the reports (triple-count conservation + fix tallies).
-pipeline: initialize-benchmark build-merge-clean generate-clean-dataset validate-clean-dataset generate-hdt validate-comunica generate-clean-results validate-clean-results audit-queries report
+pipeline: initialize-benchmark build-merge-clean generate-clean-dataset validate-clean-dataset generate-hdt validate-comunica generate-clean-results validate-clean-results audit-queries report normalize-nt
 
 initialize-benchmark: download-datasets extract-datasets
 download-datasets: .download-dataset-stamp
@@ -260,6 +260,14 @@ $(REPORT_DIR)/fix_summary.csv: $(DATASET_OUTS) $(RESULTS_DIR)/.cleaned.ok | $(RE
 report-table: $(REPORT_DIR)/tables/fix_summary.tex
 $(REPORT_DIR)/tables/fix_summary.tex: $(REPORT_DIR)/fix_summary.csv $(REPORT_TABLE_BIN) | $(REPORT_DIR)/tables
 	$(REPORT_TABLE_BIN) -fixes $< -o $@
+
+normalize-nt:
+	@for f in $(DATASET_DIR)/*.ttl; do \
+		[ -e "$$f" ] || continue; \
+		out="$${f%.ttl}.nt"; \
+		echo "normalize $$(basename $$f) -> $$(basename $$out)"; \
+		$(SOP_BIN) parse "$$f" ! serialize -f ntriples -o "$$out" && rm -f "$$f"; \
+	done
 
 # ---------------------------------------------------------------------------
 # Validation: parse every cleaned dataset with sophia-cli; errors fail the build.
