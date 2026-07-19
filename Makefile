@@ -79,7 +79,7 @@ DATASET_OUTS = $(AFFYMETRIX_OUT) $(DRUGBANK_OUT) $(LMDB_OUT) $(JAMENDO_OUT) $(NY
 # Full pipeline: build tooling, generate every cleaned dataset into
 # $(DATASET_DIR), clean the expected query results into $(RESULTS_DIR), then
 # write the reports (triple-count conservation + fix tallies).
-pipeline: initialize-benchmark build-merge-clean generate-clean-dataset validate-clean-dataset generate-hdt validate-comunica generate-clean-results validate-clean-results audit-queries report normalize-nt
+pipeline: initialize-benchmark build-merge-clean generate-clean-dataset validate-clean-dataset generate-hdt validate-comunica generate-clean-results validate-clean-results audit-queries report clean-download normalize-nt
 
 initialize-benchmark: download-datasets extract-datasets
 download-datasets: .download-dataset-stamp
@@ -399,7 +399,7 @@ clean-generation:
 # Remove the downloaded + extracted sources, forcing a fresh download next run.
 clean-download:
 	rm -f .download-dataset-stamp $(ARCHIVE)
-	rm -rf $(QUERIES_DIR) $(RAW_DATASETS_DIR) $(RAW_RESULTS_DIR) large-rdf-bench
+	rm -rf $(RAW_DATASETS_DIR) $(RAW_RESULTS_DIR) large-rdf-bench
 
 # Remove only the validation stamps
 clean-validation-stamps:
