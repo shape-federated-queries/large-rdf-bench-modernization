@@ -1,4 +1,90 @@
 {
+  "C8": [
+    {
+      "binding": 914,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "�",
+      "to": "ä"
+    },
+    {
+      "binding": 915,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "�",
+      "to": "ä"
+    },
+    {
+      "binding": 916,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "�",
+      "to": "ä"
+    },
+    {
+      "binding": 917,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "�",
+      "to": "ä"
+    },
+    {
+      "binding": 1395,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1396,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1397,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1398,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1399,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1400,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1401,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    },
+    {
+      "binding": 1402,
+      "var": "fullnames",
+      "pos": 9,
+      "from": "��",
+      "to": "öß"
+    }
+  ],
   "S14": [
     {
       "binding": 1012,
@@ -20,6 +106,15 @@
       "pos": 95,
       "from": "??",
       "to": "��"
+    }
+  ],
+  "S6": [
+    {
+      "binding": 7,
+      "var": "name",
+      "pos": 9,
+      "from": "�",
+      "to": "ü"
     }
   ],
   "S8": [
