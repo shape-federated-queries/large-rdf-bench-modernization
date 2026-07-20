@@ -31,6 +31,7 @@ REPORT_DIR        = ./reports
 MERGE_CLEAN_BIN   = ./merge_clean/bin/merge_clean_nt
 CLEAN_RDF_BIN     = ./merge_clean/bin/merge_clean_rdf
 CLEAN_RESULTS_BIN = ./merge_clean/bin/clean_results
+CHAR_REPAIRS      = ./merge_clean/cmd/clean_results/char_repairs.json
 REPORT_TABLE_BIN  = ./merge_clean/bin/report_table
 SOP_BIN           = sop
 VALID_DIR         = $(DATASET_DIR)/.validated
@@ -233,9 +234,9 @@ $(RAW_RESULTS_DIR)/.fetched: $(ARCHIVE)
 	touch $@
 
 generate-clean-results: $(RESULTS_DIR)/.cleaned.ok
-$(RESULTS_DIR)/.cleaned.ok: $(RAW_RESULTS_DIR)/.fetched $(CLEAN_RESULTS_BIN) | $(RESULTS_DIR) $(RESULTS_DIR)/stats
+$(RESULTS_DIR)/.cleaned.ok: $(RAW_RESULTS_DIR)/.fetched $(CLEAN_RESULTS_BIN) $(CHAR_REPAIRS) | $(RESULTS_DIR) $(RESULTS_DIR)/stats
 	@for f in $(RAW_RESULTS_DIR)/*.srj; do n=$$(basename "$$f" .srj); \
-		$(CLEAN_RESULTS_BIN) -o $(RESULTS_DIR)/$$n.srj -stats $(RESULTS_DIR)/stats/$$n.csv "$$f"; done
+		$(CLEAN_RESULTS_BIN) -o $(RESULTS_DIR)/$$n.srj -stats $(RESULTS_DIR)/stats/$$n.csv -repairs $(CHAR_REPAIRS) "$$f"; done
 	@touch $@
 
 # Each cleaned result must be valid SPARQL-JSON with the same binding count as its raw source.

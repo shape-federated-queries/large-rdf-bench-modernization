@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/shape-federated-queries/merge-clean/processor"
@@ -44,7 +46,66 @@ type srj struct {
 	Boolean *bool           `json:"boolean,omitempty"`
 }
 
-type counts struct{ uris, datatypes, langs, decoded, nulls int }
+type counts struct{ uris, datatypes, langs, decoded, nulls, chars int }
+
+// charEdit is one positional character repair from the repair map: at
+// bindings[Binding][Var], the run From at rune offset Pos becomes To. The map is
+// read from disk at runtime so it can be edited without rebuilding the binary.
+type charEdit struct {
+	Binding int    `json:"binding"`
+	Var     string `json:"var"`
+	Pos     int    `json:"pos"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+}
+
+// loadCharRepairs reads the query-scoped repair map from path. An empty path or
+// a missing file yields no repairs, so the map is optional.
+func loadCharRepairs(path string) (map[string][]charEdit, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var m map[string][]charEdit
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return m, nil
+}
+
+// applyCharRepairs applies a query's positional repairs, highest offset first so
+// earlier positions stay valid. A repair whose From is not found at Pos is
+// skipped with a warning rather than silently changing the wrong text.
+func applyCharRepairs(bindings []map[string]term, edits []charEdit, c *counts) {
+	sorted := append([]charEdit(nil), edits...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Pos > sorted[j].Pos })
+	for _, e := range sorted {
+		if e.Binding < 0 || e.Binding >= len(bindings) {
+			fmt.Fprintf(os.Stderr, "char_repairs: binding %d out of range\n", e.Binding)
+			continue
+		}
+		t, ok := bindings[e.Binding][e.Var]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "char_repairs: binding %d has no var %q\n", e.Binding, e.Var)
+			continue
+		}
+		r := []rune(t.Value)
+		from := []rune(e.From)
+		if e.Pos < 0 || e.Pos+len(from) > len(r) || string(r[e.Pos:e.Pos+len(from)]) != e.From {
+			fmt.Fprintf(os.Stderr, "char_repairs: %q not found at pos %d (binding %d var %s)\n", e.From, e.Pos, e.Binding, e.Var)
+			continue
+		}
+		t.Value = string(r[:e.Pos]) + e.To + string(r[e.Pos+len(from):])
+		bindings[e.Binding][e.Var] = t
+		c.chars++
+	}
+}
 
 // isNullSentinel reports whether a term is the original benchmark's placeholder
 // for an unbound variable: the literal 'null'. A standards-compliant engine
@@ -113,6 +174,7 @@ func decodeInlineLiteral(t term) (term, bool) {
 func main() {
 	outPath := flag.String("o", "", "output file (default: stdout)")
 	statsPath := flag.String("stats", "", "write a CSV fix-count report to this file")
+	repairsPath := flag.String("repairs", "", "path to a query-scoped character-repair map (JSON), read at runtime")
 	flag.Parse()
 
 	in, closeIn, err := openInput(flag.Args())
@@ -134,8 +196,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	repairs, err := loadCharRepairs(*repairsPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	query := ""
+	if a := flag.Args(); len(a) == 1 {
+		query = strings.TrimSuffix(filepath.Base(a[0]), ".srj")
+	}
+
 	var c counts
 	if doc.Results != nil {
+		applyCharRepairs(doc.Results.Bindings, repairs[query], &c)
 		for _, b := range doc.Results.Bindings {
 			for v, t := range b {
 				if isNullSentinel(t) {
@@ -176,8 +249,8 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Done. URIs: %d, datatypes: %d, lang tags: %d, literals decoded: %d, null sentinels dropped: %d\n",
-		c.uris, c.datatypes, c.langs, c.decoded, c.nulls)
+	fmt.Fprintf(os.Stderr, "Done. URIs: %d, datatypes: %d, lang tags: %d, literals decoded: %d, null sentinels dropped: %d, chars repaired: %d\n",
+		c.uris, c.datatypes, c.langs, c.decoded, c.nulls, c.chars)
 }
 
 func openInput(args []string) (io.Reader, func(), error) {
@@ -200,7 +273,7 @@ func writeStats(path string, c counts) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "uris_cleaned,datatypes_cleaned,lang_tags_fixed,literals_decoded,null_sentinels_dropped\n%d,%d,%d,%d,%d\n",
-		c.uris, c.datatypes, c.langs, c.decoded, c.nulls)
+	_, err = fmt.Fprintf(f, "uris_cleaned,datatypes_cleaned,lang_tags_fixed,literals_decoded,null_sentinels_dropped,chars_repaired\n%d,%d,%d,%d,%d,%d\n",
+		c.uris, c.datatypes, c.langs, c.decoded, c.nulls, c.chars)
 	return err
 }
